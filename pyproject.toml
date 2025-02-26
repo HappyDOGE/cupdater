@@ -1,0 +1,32 @@
+[project]
+name = "cupdater"
+authors = [
+    { name = "dogecore" }
+]
+version = "0.1.0"
+description = "Updater and launcher for projects"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+dependencies = [
+    "pyinstaller>=6.12.0",
+    "aiohttp[speedups]>=3.11.13",
+    "aiofiles>=24.1.0"
+]
+
+[tool.poetry]
+name = "cupdater"
+authors = ["dogecore"]
+version = "0.1.0"
+description = "Updater and launcher for projects"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+build_win = "cupdater.pyinstaller:install"
+
+[project.scripts]
+cupdater = "cupdater.__main__:main"
