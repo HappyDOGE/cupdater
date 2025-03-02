@@ -1,5 +1,6 @@
 import asyncio
 import gevent.monkey
+
 gevent.monkey.patch_all()
 import gevent
 import asyncio_gevent
@@ -13,11 +14,15 @@ import traceback
 import sys, os
 import argparse
 import mmap
+import json
+from pathlib import Path
+
 from .backend import InstallerBackend
 from .frontend import TUIFrontend, GUIFrontend
+from .backend.filedb import UPDATE_DATA_DB_FILENAME
 
 
-PROVISIONING_EMBEDDED_HEADER = b"@@@CUPMANIFESTURL@@@"
+PROVISIONING_EMBEDDED_HEADER = b"@@@CUPMANIFESTCFG@@@"
 def get_embedded_package_manifest():
     '''
     Extract the embedded manifest URL from the executable. None if file is not openable / none found.
@@ -32,9 +37,9 @@ def get_embedded_package_manifest():
         e.seek(pos + len(PROVISIONING_EMBEDDED_HEADER))
         data = e.read()
         try:
-            link = data.decode("utf-8")
-            if link.startswith("http"):
-                return link.strip()
+            data = data.decode("utf-8")
+            if data.startswith("{"):
+                return data.strip()
         except:
             pass
         return None
@@ -58,17 +63,29 @@ async def amain():
         prog="cupdater",
         description="Updater and launcher"
     )
-    parser.add_argument("-m", "--manifest", help="Package manifest URL", default=get_default_package_manifest())
+    manifest_configuration = get_default_package_manifest()
+    if manifest_configuration is not None:
+        manifest_configuration = json.loads(manifest_configuration)
+    parser.add_argument("-m", "--manifest", help="Package manifest URL", default=manifest_configuration["url"] if manifest_configuration is not None else None)
     parser.add_argument("-b", "--branch", help="Use special package branch", default=None)
     parser.add_argument("-i", "--installdir", help="Use custom installation directory", default=None)
     parser.add_argument("--console", help="Use console instead of the GUI", action="store_true", default=not get_default_gui())
     parser.add_argument("-v", "--verbose", help="Enable verbose logging", action="store_true")
     parser.add_argument("-f", "--force", help="Force recheck manifest", action="store_true")
     parser.add_argument("--noselfupdate", help="Skip checking for self-update", action="store_true")
-    parser.add_argument("--http-timeout", help="Set HTTP download timeout for content", default=1800)
+    parser.add_argument("--http-timeout", help="Set HTTP download timeout for content", default=3600)
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
     frontend = TUIFrontend() if args.console else GUIFrontend()
+    use_manifest_configuration_installdir = args.installdir is None and manifest_configuration is not None and "installdir" in manifest_configuration
+    if use_manifest_configuration_installdir:
+        try:
+            idir = Path(os.curdir) / manifest_configuration["installdir"] # type: ignore
+            if idir.exists() or not (Path(os.curdir) / UPDATE_DATA_DB_FILENAME).exists(): # if FileDB database is in our current dir, there is no need to move
+                idir.mkdir(parents=True, exist_ok=True)
+                os.chdir(idir)
+        except (FileNotFoundError, PermissionError):
+            frontend.fatal("Installation directory " + args.installdir + " was not found and could not be created. Please check that the folder has correct write permissions set up.")
     backend = InstallerBackend(frontend, timeout=args.http_timeout)
     manifest = args.manifest
     if manifest is None:
@@ -82,13 +99,14 @@ async def amain():
     except Exception as e:
         if args.verbose: traceback.print_exc()
         frontend.fatal("Manifest load error: " + str(e) + ". Please try again later or contact support.")
-    if args.installdir is None:
-        backend.use_default_install_dir()
-    else:
-        try:
-            os.chdir(args.installdir)
-        except FileNotFoundError:
-            frontend.fatal("Installation directory " + args.installdir + " was not found. Please check that the folder exists and has correct write permissions set up.")
+    if not use_manifest_configuration_installdir:
+        if args.installdir is None:
+            backend.use_default_install_dir()
+        else:
+            try:
+                os.chdir(args.installdir)
+            except FileNotFoundError:
+                frontend.fatal("Installation directory " + args.installdir + " was not found. Please check that the folder exists and has correct write permissions set up.")
     backend.set_branch(args.branch if args.branch is not None else "public")
     await backend.update(force=args.force, ignore_self_update=args.noselfupdate)
     if args.console:

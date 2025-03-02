@@ -3,6 +3,7 @@ import os
 import sqlite3
 import zlib
 
+UPDATE_DATA_DB_FILENAME = "updatedata.db"
 TABLES_SCHEMA="""
 CREATE TABLE IF NOT EXISTS meta(key TEXT, value BLOB);
 CREATE UNIQUE INDEX IF NOT EXISTS meta_key ON meta (key);
@@ -22,7 +23,7 @@ def fcrc32(fpath):
 class FileDB:
     _conn: sqlite3.Connection
     def __init__(self) -> None:
-        self._conn = sqlite3.connect("updatedata.db")
+        self._conn = sqlite3.connect(UPDATE_DATA_DB_FILENAME)
         self._populate_tables()
     def _populate_tables(self):
         self._conn.executescript(TABLES_SCHEMA)
