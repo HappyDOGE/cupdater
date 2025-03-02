@@ -21,3 +21,5 @@ class Frontend:
         raise NotImplementedError()
     def progress(self, title, total=None, unit=None, leave=True) -> ProgressReportInterface:
         raise NotImplementedError()
+    def set_branding(self, branding):
+        raise NotImplementedError()

@@ -43,3 +43,5 @@ class TUIFrontend(Frontend):
         sys.exit(1)
     def progress(self, title, total=None, unit=None, leave=True):
         return TUIProgressReport(title, total=total, unit=unit, leave=leave)
+    def set_branding(self, branding):
+        pass

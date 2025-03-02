@@ -22,7 +22,7 @@ def get_embedded_package_manifest():
     '''
     Extract the embedded manifest URL from the executable. None if file is not openable / none found.
     '''
-    if not getattr(sys, "frozen", False):
+    if not (getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")):
         return None # not a frozen executable build
     with open(sys.executable, "rb") as f, \
             mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as e:
