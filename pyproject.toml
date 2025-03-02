@@ -6,13 +6,20 @@ authors = [
 version = "0.1.0"
 description = "Updater and launcher for projects"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
 classifiers = ["License :: OSI Approved :: MIT License"]
 dependencies = [
+    "tqdm>=4.67.1",
     "pyinstaller>=6.12.0",
     "aiohttp[speedups]>=3.11.13",
-    "aiofiles>=24.1.0"
+    "aiofiles>=24.1.0",
+    "remotezip=0.12.3",
+    "jsonschema>=4.23.0",
+    "zstandard=0.23.0",
+    "zipfile-zstd=0.0.4",
+    "gevent<23.0.0",
+    "asyncio-gevent=0.2.3"
 ]
 
 [tool.poetry]
@@ -21,12 +28,25 @@ authors = ["dogecore"]
 version = "0.1.0"
 description = "Updater and launcher for projects"
 
+[tool.poetry.dependencies]
+python = ">=3.11,<3.14"
+tqdm = "^4.67.1"
+pyinstaller = ">=6.12.0"
+aiohttp = {version = ">=3.11.13", extras = ["speedups"]}
+aiofiles = ">=24.1.0"
+remotezip = "^0.12.3"
+jsonschema = "^4.23.0"
+zstandard = "^0.23.0"
+zipfile-zstd = "^0.0.4"
+gevent = "<23.0.0"
+asyncio-gevent = "^0.2.3"
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-build_win = "cupdater.pyinstaller:install"
+build = "pyinstaller:install"
 
 [project.scripts]
-cupdater = "cupdater.__main__:main"
+cupdater = "cli"
