@@ -78,3 +78,7 @@ class FileDB:
         cur = self._conn.execute("UPDATE files SET crc = ?, updated = ? WHERE path = ?", (crc, updated, relpath))
         self._conn.commit()
         cur.close()
+    def clear_tracked_files(self):
+        cur = self._conn.execute("DELETE FROM files")
+        self._conn.commit()
+        cur.close()

@@ -49,7 +49,8 @@ def get_default_package_manifest():
     return None
 
 def get_default_gui():
-    return sys.platform == "win32" or "DISPLAY" in os.environ
+    return False # TODO
+    # return sys.platform == "win32" or "DISPLAY" in os.environ
 
 async def amain():
     # Hello, world!
@@ -63,15 +64,12 @@ async def amain():
     parser.add_argument("--console", help="Use console instead of the GUI", action="store_true", default=not get_default_gui())
     parser.add_argument("-v", "--verbose", help="Enable verbose logging", action="store_true")
     parser.add_argument("-f", "--force", help="Force recheck manifest", action="store_true")
+    parser.add_argument("--noselfupdate", help="Skip checking for self-update", action="store_true")
+    parser.add_argument("--http-timeout", help="Set HTTP download timeout for content", default=1800)
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
-    frontend = TUIFrontend() # if args.console else GUIFrontend()
-    backend = InstallerBackend(frontend)
-    if args.installdir is not None:
-        try:
-            os.chdir(args.installdir)
-        except FileNotFoundError:
-            frontend.fatal("Installation directory " + args.installdir + " was not found. Please check that the folder exists and has correct write permissions set up.")
+    frontend = TUIFrontend() if args.console else GUIFrontend()
+    backend = InstallerBackend(frontend, timeout=args.http_timeout)
     manifest = args.manifest
     if manifest is None:
         manifest = await frontend.ask("Please enter the manifest URL:")
@@ -84,8 +82,17 @@ async def amain():
     except Exception as e:
         if args.verbose: traceback.print_exc()
         frontend.fatal("Manifest load error: " + str(e) + ". Please try again later or contact support.")
+    if args.installdir is None:
+        backend.use_default_install_dir()
+    else:
+        try:
+            os.chdir(args.installdir)
+        except FileNotFoundError:
+            frontend.fatal("Installation directory " + args.installdir + " was not found. Please check that the folder exists and has correct write permissions set up.")
     backend.set_branch(args.branch if args.branch is not None else "public")
-    await backend.update(force=args.force)
+    await backend.update(force=args.force, ignore_self_update=args.noselfupdate)
+    if args.console:
+        input("Press ENTER to continue...")
 
 def main():
     asyncio.run(amain())
