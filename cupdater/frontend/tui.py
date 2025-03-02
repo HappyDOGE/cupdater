@@ -40,6 +40,7 @@ class TUIFrontend(Frontend):
         return await ainput(question)
     def fatal(self, error):
         logger.fatal(error)
+        input("Press ENTER to continue...")
         sys.exit(1)
     def progress(self, title, total=None, unit=None, leave=True):
         return TUIProgressReport(title, total=total, unit=unit, leave=leave)
