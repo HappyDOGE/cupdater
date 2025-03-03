@@ -18,10 +18,6 @@ MANIFEST_SCHEMA={
         "name": {
           "description": "Name of the application that will be used for in-app branding",
           "type": "string"
-        },
-        "installdir": {
-          "description": "The used installation directory. Defaults to 'InstalledApplication' if not defined.",
-          "type": "string"
         }
       }
     },

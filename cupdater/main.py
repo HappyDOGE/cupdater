@@ -78,8 +78,13 @@ async def amain():
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
     frontend = TUIFrontend(nopause=args.nopause) if args.console else GUIFrontend(nopause=args.nopause)
-    use_manifest_configuration_installdir = args.installdir is None and manifest_configuration is not None and "installdir" in manifest_configuration
-    if use_manifest_configuration_installdir:
+    use_manifest_configuration_installdir = manifest_configuration is not None and "installdir" in manifest_configuration
+    if args.installdir is not None:
+        try:
+            os.chdir(args.installdir)
+        except FileNotFoundError:
+            frontend.fatal("Installation directory " + args.installdir + " was not found. Please check that the folder exists and has correct write permissions set up.")
+    elif use_manifest_configuration_installdir:
         try:
             idir = Path(os.curdir) / manifest_configuration["installdir"] # type: ignore
             if idir.exists() or not (Path(os.curdir) / UPDATE_DATA_DB_FILENAME).exists(): # if FileDB database is in our current dir, there is no need to move
@@ -100,14 +105,6 @@ async def amain():
     except Exception as e:
         if args.verbose: traceback.print_exc()
         frontend.fatal("Manifest load error: " + str(e) + ". Please try again later or contact support.")
-    if not use_manifest_configuration_installdir:
-        if args.installdir is None:
-            backend.use_default_install_dir()
-        else:
-            try:
-                os.chdir(args.installdir)
-            except FileNotFoundError:
-                frontend.fatal("Installation directory " + args.installdir + " was not found. Please check that the folder exists and has correct write permissions set up.")
     backend.set_branch(args.branch if args.branch is not None else "public")
     await backend.update(force=args.force, ignore_self_update=args.noselfupdate)
     frontend.pause()

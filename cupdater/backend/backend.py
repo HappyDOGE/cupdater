@@ -169,17 +169,6 @@ class InstallerBackend:
         self._selected_branch = branch
         self._selected_branch_data = self._manifest["branches"][branch]
 
-    def use_default_install_dir(self):
-        if self._manifest is None:
-            self._frontend.fatal("Manifest is not loaded.")
-            return
-        cwd = pathlib.Path(os.curdir)
-        folder = self._manifest["brand"]["installdir"] if "installdir" in self._manifest["brand"] else "InstalledApplication"
-        installdir = (cwd / folder)
-        logger.info("Installation directory is %s", installdir)
-        installdir.mkdir(parents=True, exist_ok=True)
-        os.chdir(installdir)
-
     async def update(self, force=False, ignore_self_update=False):
         CLEAN_INSTALL_COMPLETE = "clean-install:complete"
         if self._manifest is None:
