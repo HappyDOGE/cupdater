@@ -32,7 +32,9 @@ class TUIProgressReport(ProgressReportInterface):
         self._tqdm.write(status)
 
 class TUIFrontend(Frontend):
-    def __init__(self) -> None:
+    nopause: bool
+    def __init__(self, nopause=False) -> None:
+        self.nopause = nopause
         super().__init__()
     def notify(self, notice):
         logger.info(notice)
@@ -40,9 +42,12 @@ class TUIFrontend(Frontend):
         return await ainput(question)
     def fatal(self, error):
         logger.fatal(error)
-        input("Press ENTER to continue...")
+        self.pause()
         sys.exit(1)
     def progress(self, title, total=None, unit=None, leave=True):
         return TUIProgressReport(title, total=total, unit=unit, leave=leave)
     def set_branding(self, branding):
         pass
+    def pause(self):
+        if not self.nopause:
+            input("Press ENTER to continue...")

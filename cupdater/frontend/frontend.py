@@ -13,6 +13,8 @@ class ProgressReportInterface:
         raise NotImplementedError()
 
 class Frontend:
+    def __init__(self, nopause=False) -> None:
+        pass
     def notify(self, notice):
         raise NotImplementedError()
     async def ask(self, question):
@@ -22,4 +24,6 @@ class Frontend:
     def progress(self, title, total=None, unit=None, leave=True) -> ProgressReportInterface:
         raise NotImplementedError()
     def set_branding(self, branding):
+        raise NotImplementedError()
+    def pause(self):
         raise NotImplementedError()

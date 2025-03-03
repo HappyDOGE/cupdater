@@ -74,9 +74,10 @@ async def amain():
     parser.add_argument("-f", "--force", help="Force recheck manifest", action="store_true")
     parser.add_argument("--noselfupdate", help="Skip checking for self-update", action="store_true")
     parser.add_argument("--http-timeout", help="Set HTTP download timeout for content", default=3600)
+    parser.add_argument("--nopause", help="Don't wait for user input, just exit the process", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
-    frontend = TUIFrontend() if args.console else GUIFrontend()
+    frontend = TUIFrontend(nopause=args.nopause) if args.console else GUIFrontend(nopause=args.nopause)
     use_manifest_configuration_installdir = args.installdir is None and manifest_configuration is not None and "installdir" in manifest_configuration
     if use_manifest_configuration_installdir:
         try:
@@ -109,8 +110,7 @@ async def amain():
                 frontend.fatal("Installation directory " + args.installdir + " was not found. Please check that the folder exists and has correct write permissions set up.")
     backend.set_branch(args.branch if args.branch is not None else "public")
     await backend.update(force=args.force, ignore_self_update=args.noselfupdate)
-    if args.console:
-        input("Press ENTER to continue...")
+    frontend.pause()
 
 def main():
     asyncio.run(amain())
