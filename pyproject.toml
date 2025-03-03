@@ -49,4 +49,4 @@ build-backend = "poetry.core.masonry.api"
 build = "pyinstaller:install"
 
 [project.scripts]
-cupdater = "cli"
+cupdater = "cli:main"
