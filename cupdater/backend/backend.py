@@ -72,6 +72,11 @@ class InstallerBackend:
         logger.debug("Removing source archive %s", filename)
         os.unlink(filename)
 
+    def _known_file(self, filename):
+        try:
+            self._deletable_files.remove(filename)
+        except ValueError: pass # new file
+
     async def _download_file(self, url, filename, title=None):
         async with self._session.get(url) as response:
             size = int(response.headers.get("content-length", 0)) or None
@@ -92,9 +97,9 @@ class InstallerBackend:
                 if logger.level == logging.DEBUG: traceback.print_exc()
                 logger.warning("Failed to download URL %s: %s. %i retries left.", url, str(e), r-1)
                 os.unlink(filename)
-        await self._frontend.fatal(("Failed to download file %s after %i retries. Last error was: %s. " \
+        await self._frontend.fatal("Failed to download file %s after %i retries. Last error was: %s. " \
                                     "Please try again later or contact support." % 
-                                   url, retries, str(ee)))
+                                   (url, retries, str(ee)))
 
     async def _download_and_unzip(self, url):
         logger.debug("Downloading layer content archive %s fully since this is a clean install", url)
@@ -103,35 +108,116 @@ class InstallerBackend:
         await self._download_file_with_retries(url, filename)
         await asyncio.to_thread(self._unzip, filename)
 
-    async def _selective_download(self, url):
-        logger.debug("Downloading layer content archive %s selectively", url)
+    async def _selective_check(self, url, retries=5):
+        logger.debug("Checking layer content archive %s for new or modified files", url)
         filename = url.rpartition("/")[-1]
         logger.debug("Loading archive %s", filename)
-        with RemoteZip(url, proxies={"http": "", "https": ""}, support_suffix_range=False) as zf:
-            new = []
-            overwrite = []
-            for f in zf.filelist:
-                if not f.is_dir():
-                    file_info = self._db.get_file(f.filename)
-                    if not file_info:
-                        # new file, add to tracking list
-                        new.append(f)
-                        continue
-                    self._deletable_files.remove(f.filename)
-                    _, dcrc, _ = file_info
-                    if f.CRC != dcrc:
-                        # overwrite updated file
-                        overwrite.append(f)
-                        continue
-            to_download = (new + overwrite)
-            with self._frontend.progress(f"Downloading {filename}", total=len(to_download), unit="file", leave=False) as p:
-                for f in to_download:
+        ee = None
+        for r in range(retries, 0, -1):
+            try:
+                with RemoteZip(url, proxies={"http": "", "https": ""}, support_suffix_range=False, allow_redirects=True) as zf:
+                    new = []
+                    overwrite = []
+                    for f in zf.filelist:
+                        if not f.is_dir():
+                            file_info = self._db.get_file(f.filename)
+                            if not file_info:
+                                # new file, add to tracking list
+                                new.append(f)
+                                continue
+                            _, dcrc, _ = file_info
+                            if f.CRC != dcrc:
+                                # overwrite updated file
+                                overwrite.append(f)
+                                continue
+                    return zf.filelist.copy(), new, overwrite
+            except Exception as e:
+                ee = e
+                if logger.level == logging.DEBUG: traceback.print_exc()
+                logger.debug("Failed to load file information of archive %s: %s. %i retries left.", filename, str(e), r-1)
+        await self._frontend.fatal("Failed to load file information of archive %s after %i retries. Last error was: %s. " \
+                                "Please try again later or contact support." % 
+                            (filename, retries, str(ee)))
+
+    async def _download_and_unzip_selective(self, url):
+        logger.debug("Downloading layer content archive %s and extracting updated files", url)
+        filename = url.rpartition("/")[-1]
+        total, new, overwrite = await self._selective_check(url)
+        for f in total: self._known_file(f.filename)
+        if (len(new) + len(overwrite)) == 0:
+            logger.debug("Archive %s is unchanged", filename)
+            return
+        logger.info("Downloading %s", filename)
+        await self._download_file_with_retries(url, filename)
+        logger.info("Extracting %s", filename)
+        with ZipFile(filename) as zf:
+            to_extract = (new + overwrite)
+            with self._frontend.progress(f"Extracting {filename}", total=len(to_extract), unit="file", leave=False) as p:
+                for f in to_extract:
                     p.update()
-                    zf.extract(f)
+                    self._known_file(f.filename)
+                    if not os.path.islink(f.filename):
+                        zf.extract(f)
             for f in new:
                 self._db.track_file(f.filename, f.CRC, os.path.getmtime(f.filename))
             for f in overwrite:
                 self._db.update_tracked_file(f.filename, f.CRC, os.path.getmtime(f.filename))
+        logger.debug("Removing source archive %s", filename)
+        os.unlink(filename)
+
+    ''' wip (currently very slow) '''
+    async def _selective_download(self, url, retries_for_archive=5, retries_per_file=15):
+        logger.debug("Downloading layer content archive %s selectively", url)
+        filename = url.rpartition("/")[-1]
+        logger.debug("Loading archive %s", filename)
+        eea = None
+        for ra in range(retries_for_archive, 0, -1):
+            try:
+                with RemoteZip(url, proxies={"http": "", "https": ""}, support_suffix_range=False, allow_redirects=True) as zf:
+                    new = []
+                    overwrite = []
+                    for f in zf.filelist:
+                        if not f.is_dir():
+                            file_info = self._db.get_file(f.filename)
+                            if not file_info:
+                                # new file, add to tracking list
+                                new.append(f)
+                                continue
+                            self._known_file(f.filename)
+                            _, dcrc, _ = file_info
+                            if f.CRC != dcrc:
+                                # overwrite updated file
+                                overwrite.append(f)
+                                continue
+                    to_download = (new + overwrite)
+                    with self._frontend.progress(f"Downloading {filename}", total=len(to_download), unit="file", leave=False) as p:
+                        for f in to_download:
+                            p.update()
+                            eef = None
+                            for rf in range(retries_per_file, 0, -1):
+                                try:
+                                    zf.extract(f)
+                                    break
+                                except Exception as e:
+                                    eef = e
+                                    if rf == 0:
+                                        await self._frontend.fatal("Failed to selectively download file %s after %i retries. Last error was: %s. " \
+                                                                    "Please try again later or contact support." % 
+                                                                (url, retries_per_file, str(eef)))
+                                    if logger.level == logging.DEBUG: traceback.print_exc()
+                                    logger.debug("Failed to selectively download file %s: %s. %i retries left.", f.filename, str(e), rf-1)
+                    for f in new:
+                        self._db.track_file(f.filename, f.CRC, os.path.getmtime(f.filename))
+                    for f in overwrite:
+                        self._db.update_tracked_file(f.filename, f.CRC, os.path.getmtime(f.filename))
+                return
+            except Exception as e:
+                eea = e
+                if logger.level == logging.DEBUG: traceback.print_exc()
+                logger.debug("Failed to load file information of archive %s: %s. %i retries left.", filename, str(e), ra-1)
+        await self._frontend.fatal("Failed to load file information of archive %s after %i retries. Last error was: %s. " \
+                                "Please try again later or contact support." % 
+                            (filename, retries_for_archive, str(eea)))
 
     async def load_manifest_from_url(self, url, force=False):
         MANIFEST_ETAG_CACHED_KEY = "manifest:cached"
@@ -218,9 +304,13 @@ class InstallerBackend:
                             # no point in selective download, just download and unzip all at once
                             tasks.append(asyncio.ensure_future(self._download_and_unzip(url)))
                         else:
-                            tasks.append(asyncio.ensure_future(self._selective_download(url)))
+                            tasks.append(asyncio.ensure_future(self._download_and_unzip_selective(url)))
                     await asyncio.gather(*tasks)
                 self._db.set_meta(meta_key, str(layer_data["updated"]))
-        for f in self._deletable_files: os.unlink(f)
+        for f in self._deletable_files:
+            try:
+                os.unlink(f)
+            except FileNotFoundError: pass
+            self._db.delete_tracked_file(f)
         if clean_install: self._db.set_meta(CLEAN_INSTALL_COMPLETE, "1")
         self._frontend.notify("Update complete.")

@@ -83,3 +83,7 @@ class FileDB:
         cur = self._conn.execute("DELETE FROM files")
         self._conn.commit()
         cur.close()
+    def delete_tracked_file(self, relpath):
+        cur = self._conn.execute("DELETE FROM files WHERE path = ?", (relpath,))
+        self._conn.commit()
+        cur.close()
