@@ -6,6 +6,10 @@ import gevent
 import asyncio_gevent
 asyncio.set_event_loop_policy(asyncio_gevent.EventLoopPolicy())
 
+import certifi
+import os
+os.environ["SSL_CERT_FILE"] = certifi.where()
+
 import zipfile_zstd # Hotpatch zipfile for later remotezip usage
 import remotezip # Load remotezip so it loads the patched zipfile version
 
