@@ -8,8 +8,9 @@ TABLES_SCHEMA="""
 CREATE TABLE IF NOT EXISTS meta(key TEXT, value BLOB);
 CREATE UNIQUE INDEX IF NOT EXISTS meta_key ON meta (key);
 
-CREATE TABLE IF NOT EXISTS files(path TEXT, crc INTEGER, updated INTEGER);
+CREATE TABLE IF NOT EXISTS files(path TEXT, crc INTEGER, updated INTEGER, layer TEXT);
 CREATE UNIQUE INDEX IF NOT EXISTS files_path ON files (path);
+CREATE INDEX IF NOT EXISTS files_layer ON files (layer);
 """
 
 def fcrc32(fpath):
@@ -55,7 +56,7 @@ class FileDB:
         cur = self._conn.cursor()
         root = pathlib.Path(os.curdir)
         for f in files:
-            spath, crc, updated = f
+            spath, crc, updated, layer = f
             path = root / spath
             if not path.exists():
                 removed.append(path)
@@ -71,19 +72,24 @@ class FileDB:
                 continue
         cur.close()
         return files, modified, removed
-    def track_file(self, relpath, crc, updated):
-        cur = self._conn.execute("INSERT INTO files VALUES(?, ?, ?)", (relpath, crc, updated))
+    def track_files(self, files):
+        cur = self._conn.executemany("INSERT INTO files VALUES(?, ?, ?, ?)", files)
         self._conn.commit()
         cur.close()
-    def update_tracked_file(self, relpath, crc, updated):
-        cur = self._conn.execute("UPDATE files SET crc = ?, updated = ? WHERE path = ?", (crc, updated, relpath))
+    def update_tracked_files(self, files):
+        cur = self._conn.executemany("UPDATE files SET crc = ?, updated = ?, layer = ? WHERE path = ?", files)
         self._conn.commit()
         cur.close()
     def clear_tracked_files(self):
         cur = self._conn.execute("DELETE FROM files")
         self._conn.commit()
         cur.close()
-    def delete_tracked_file(self, relpath):
-        cur = self._conn.execute("DELETE FROM files WHERE path = ?", (relpath,))
+    def delete_tracked_files(self, files):
+        cur = self._conn.executemany("DELETE FROM files WHERE path = ?", files)
         self._conn.commit()
         cur.close()
+    def get_files_by_layer(self, layer):
+        cur = self._conn.execute("SELECT * FROM files WHERE layer = ?", (layer,))
+        files = cur.fetchall()
+        cur.close()
+        return files

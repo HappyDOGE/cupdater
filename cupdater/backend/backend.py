@@ -62,13 +62,15 @@ class InstallerBackend:
         if not self._session.closed:
             await self._session.close()
 
-    def _unzip(self, filename):
-        logger.info("Extracting %s", filename)
+    def _unzip(self, filename, layer):
+        logger.info("Extracting %s from layer %s", filename, layer)
         with ZipFile(filename) as zf:
-            zf.extractall()
-            for f in zf.filelist:
-                if not f.is_dir():
-                    self._db.track_file(f.filename, f.CRC, os.path.getmtime(f.filename))
+            justfiles = [f for f in zf.filelist if not f.is_dir()]
+            with self._frontend.progress(f"Extracting {filename}", total=len(justfiles), unit="file", leave=False) as p:
+                for f in justfiles:
+                    p.update()
+                    zf.extract(f)
+                self._db.track_files([(f.filename, f.CRC, os.path.getmtime(f.filename), layer) for f in justfiles])
         logger.debug("Removing source archive %s", filename)
         os.unlink(filename)
 
@@ -101,12 +103,12 @@ class InstallerBackend:
                                     "Please try again later or contact support." % 
                                    (url, retries, str(ee)))
 
-    async def _download_and_unzip(self, url):
+    async def _download_and_unzip(self, url, layer):
         logger.debug("Downloading layer content archive %s fully since this is a clean install", url)
         filename = url.rpartition("/")[-1]
         logger.info("Downloading %s", filename)
         await self._download_file_with_retries(url, filename)
-        await asyncio.to_thread(self._unzip, filename)
+        await asyncio.to_thread(self._unzip, filename, layer)
 
     async def _selective_check(self, url, retries=5):
         logger.debug("Checking layer content archive %s for new or modified files", url)
@@ -125,7 +127,7 @@ class InstallerBackend:
                                 # new file, add to tracking list
                                 new.append(f)
                                 continue
-                            _, dcrc, _ = file_info
+                            _, dcrc, _, _ = file_info
                             if f.CRC != dcrc:
                                 # overwrite updated file
                                 overwrite.append(f)
@@ -138,8 +140,9 @@ class InstallerBackend:
         await self._frontend.fatal("Failed to load file information of archive %s after %i retries. Last error was: %s. " \
                                 "Please try again later or contact support." % 
                             (filename, retries, str(ee)))
+        return [], [], []
 
-    async def _download_and_unzip_selective(self, url):
+    async def _download_and_unzip_selective(self, url, layer):
         logger.debug("Downloading layer content archive %s and extracting updated files", url)
         filename = url.rpartition("/")[-1]
         total, new, overwrite = await self._selective_check(url)
@@ -158,15 +161,13 @@ class InstallerBackend:
                     self._known_file(f.filename)
                     if not os.path.islink(f.filename):
                         zf.extract(f)
-            for f in new:
-                self._db.track_file(f.filename, f.CRC, os.path.getmtime(f.filename))
-            for f in overwrite:
-                self._db.update_tracked_file(f.filename, f.CRC, os.path.getmtime(f.filename))
+            self._db.track_files([(f.filename, f.CRC, os.path.getmtime(f.filename), layer) for f in new])
+            self._db.update_tracked_files([(f.CRC, os.path.getmtime(f.filename), layer, f.filename) for f in overwrite])
         logger.debug("Removing source archive %s", filename)
         os.unlink(filename)
 
     ''' wip (currently very slow) '''
-    async def _selective_download(self, url, retries_for_archive=5, retries_per_file=15):
+    async def _selective_download(self, url, layer, retries_for_archive=5, retries_per_file=15):
         logger.debug("Downloading layer content archive %s selectively", url)
         filename = url.rpartition("/")[-1]
         logger.debug("Loading archive %s", filename)
@@ -184,7 +185,7 @@ class InstallerBackend:
                                 new.append(f)
                                 continue
                             self._known_file(f.filename)
-                            _, dcrc, _ = file_info
+                            _, dcrc, _, _ = file_info
                             if f.CRC != dcrc:
                                 # overwrite updated file
                                 overwrite.append(f)
@@ -206,10 +207,8 @@ class InstallerBackend:
                                                                 (url, retries_per_file, str(eef)))
                                     if logger.level == logging.DEBUG: traceback.print_exc()
                                     logger.debug("Failed to selectively download file %s: %s. %i retries left.", f.filename, str(e), rf-1)
-                    for f in new:
-                        self._db.track_file(f.filename, f.CRC, os.path.getmtime(f.filename))
-                    for f in overwrite:
-                        self._db.update_tracked_file(f.filename, f.CRC, os.path.getmtime(f.filename))
+                    self._db.track_files([(f.filename, f.CRC, os.path.getmtime(f.filename), layer) for f in new])
+                    self._db.update_tracked_files([(f.CRC, os.path.getmtime(f.filename), layer, f.filename) for f in overwrite])
                 return
             except Exception as e:
                 eea = e
@@ -292,6 +291,7 @@ class InstallerBackend:
                 recorded_updated_value = int(self._db.get_meta(meta_key, "0")) # type: ignore
                 if recorded_updated_value >= layer_data["updated"] and not force and not clean_install:
                     logger.debug("Layer " + layer + " was not changed since last update check")
+                    for f in self._db.get_files_by_layer(layer): self._known_file(f[0])
                     continue
                 if len(layer_data["url"]) == 0:
                     self._frontend.fatal("Layer " + layer + " does not have any content URLs")
@@ -302,15 +302,16 @@ class InstallerBackend:
                         lp.update(1)
                         if clean_install:
                             # no point in selective download, just download and unzip all at once
-                            tasks.append(asyncio.ensure_future(self._download_and_unzip(url)))
+                            tasks.append(asyncio.ensure_future(self._download_and_unzip(url, layer)))
                         else:
-                            tasks.append(asyncio.ensure_future(self._download_and_unzip_selective(url)))
+                            tasks.append(asyncio.ensure_future(self._download_and_unzip_selective(url, layer)))
                     await asyncio.gather(*tasks)
                 self._db.set_meta(meta_key, str(layer_data["updated"]))
-        for f in self._deletable_files:
-            try:
-                os.unlink(f)
-            except FileNotFoundError: pass
-            self._db.delete_tracked_file(f)
+        if len(self._deletable_files) > 0:
+            for f in self._deletable_files:
+                try:
+                    os.unlink(f)
+                except FileNotFoundError: pass
+            self._db.delete_tracked_files([(f,) for f in self._deletable_files])
         if clean_install: self._db.set_meta(CLEAN_INSTALL_COMPLETE, "1")
         self._frontend.notify("Update complete.")
