@@ -68,7 +68,7 @@ class FileDB:
             ncrc = fcrc32(path)
             if ncrc != crc:
                 modified.append(path)
-                cur.execute("UPDATE files SET crc = ?, updated = ? WHERE path = ?", (ncrc, pmtime, spath)).close()
+                cur.execute("UPDATE files SET crc = ?, updated = ? WHERE path = ?", (ncrc, pmtime, spath))
                 continue
         cur.close()
         return files, modified, removed
