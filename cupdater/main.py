@@ -85,9 +85,12 @@ async def amain():
     use_manifest_configuration_installdir = manifest_configuration is not None and "installdir" in manifest_configuration
     if args.installdir is not None:
         try:
-            os.chdir(args.installdir)
-        except FileNotFoundError:
-            frontend.fatal("Installation directory " + args.installdir + " was not found. Please check that the folder exists and has correct write permissions set up.")
+            idir = Path(args.installdir)
+            if not idir.exists():
+                idir.mkdir(parents=True, exist_ok=True)
+            os.chdir(idir)
+        except (FileNotFoundError, PermissionError):
+            frontend.fatal("Installation directory " + args.installdir + " was not found and could not be created. Please check that the folder exists and has correct write permissions set up.")
     elif use_manifest_configuration_installdir:
         try:
             idir = Path(os.curdir) / manifest_configuration["installdir"] # type: ignore
