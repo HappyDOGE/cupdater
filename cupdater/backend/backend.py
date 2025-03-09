@@ -222,7 +222,7 @@ class InstallerBackend:
         MANIFEST_ETAG_CACHED_KEY = "manifest:cached"
         MANIFEST_ETAG_META_KEY = "manifest:cached:etag"
         etag = self._db.get_meta(MANIFEST_ETAG_META_KEY)
-        use_etag = etag is not None and not force
+        use_etag = False # etag is not None and not force # disabled for now, will rework later
         if use_etag:
             logger.debug("Found Etag for previous manifest download, will skip update if it hasn't changed")
         logger.info("Loading update manifest")
