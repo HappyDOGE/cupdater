@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 import gevent.monkey
 
 gevent.monkey.patch_all()
@@ -99,6 +100,12 @@ async def amain():
                 os.chdir(idir)
         except (FileNotFoundError, PermissionError):
             frontend.fatal("Installation directory " + args.installdir + " was not found and could not be created. Please check that the folder has correct write permissions set up.")
+    updater_copy_path = Path(os.getcwd()) / Path(sys.executable).name
+    if (getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")) and Path(sys.executable) != updater_copy_path:
+        try:
+            shutil.copy(sys.executable, updater_copy_path)
+        except:
+            logging.warning("Failed to copy this copy of the updater (%s) to the installation directory %s.", sys.executable, updater_copy_path)
     backend = InstallerBackend(frontend, timeout=args.http_timeout)
     manifest = args.manifest
     if manifest is None:
